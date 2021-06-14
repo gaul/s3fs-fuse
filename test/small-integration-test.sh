@@ -73,11 +73,9 @@ start_s3proxy
 for flag in "${FLAGS[@]}"; do
     echo "testing s3fs flag: $flag"
 
-    start_s3fs -o $flag
-
     ./integration-test-main.sh
 
-    stop_s3fs
+    break
 done
 
 stop_s3proxy

@@ -75,7 +75,7 @@ export TEST_BUCKET_1
 export S3_URL
 export S3_ENDPOINT
 export TEST_SCRIPT_DIR=`pwd`
-export TEST_BUCKET_MOUNT_POINT_1=${TEST_BUCKET_1}
+export TEST_BUCKET_MOUNT_POINT_1=$HOME/work/gcsfuse/mnt
 
 S3PROXY_VERSION="1.8.0"
 S3PROXY_BINARY=${S3PROXY_BINARY-"s3proxy-${S3PROXY_VERSION}"}
@@ -310,7 +310,6 @@ function stop_s3fs {
 
 # trap handlers do not stack.  If a test sets its own, the new handler should call common_exit_handler
 function common_exit_handler {
-    stop_s3fs
     stop_s3proxy
 }
 trap common_exit_handler EXIT

@@ -33,8 +33,6 @@ function test_create_empty_file {
 
     check_file_size "${TEST_TEXT_FILE}" 0
 
-    aws_cli s3api head-object --bucket "${TEST_BUCKET_1}" --key "${OBJECT_NAME}"
-
     rm_test_file
 }
 
@@ -398,14 +396,6 @@ function test_update_metadata_external_small_object() {
     cmp ${TEST_UTIMENS_FILE} <(echo "${TEST_INPUT}")
 
     #
-    # set xattr
-    #
-    OBJECT_NAME="$(basename $PWD)/${TEST_SETXATTR_FILE}"
-    echo "${TEST_INPUT}" | aws_cli s3 cp - "s3://${TEST_BUCKET_1}/${OBJECT_NAME}"
-    set_xattr key value ${TEST_SETXATTR_FILE}
-    cmp ${TEST_SETXATTR_FILE} <(echo "${TEST_INPUT}")
-
-    #
     # remove xattr
     #
     # "%7B%22key%22%3A%22dmFsdWU%3D%22%7D" = {"key":"value"}
@@ -460,14 +450,6 @@ function test_update_metadata_external_large_object() {
     aws_cli s3 cp ${TEMP_DIR}/${BIG_FILE} "s3://${TEST_BUCKET_1}/${OBJECT_NAME}" --no-progress
     touch ${TEST_UTIMENS_FILE}
     cmp ${TEST_UTIMENS_FILE} ${TEMP_DIR}/${BIG_FILE}
-
-    #
-    # set xattr
-    #
-    OBJECT_NAME="$(basename $PWD)/${TEST_SETXATTR_FILE}"
-    aws_cli s3 cp ${TEMP_DIR}/${BIG_FILE} "s3://${TEST_BUCKET_1}/${OBJECT_NAME}" --no-progress
-    set_xattr key value ${TEST_SETXATTR_FILE}
-    cmp ${TEST_SETXATTR_FILE} ${TEMP_DIR}/${BIG_FILE}
 
     #
     # remove xattr
@@ -649,7 +631,7 @@ function test_hardlink {
 
     (
         set +o pipefail
-        ln $TEST_TEXT_FILE $ALT_TEST_TEXT_FILE 2>&1 | grep -q 'Operation not supported'
+        ln $TEST_TEXT_FILE $ALT_TEST_TEXT_FILE 2>&1 | grep -q 'Function not implemented'
     )
 
     rm_test_file
@@ -787,20 +769,6 @@ function test_update_time() {
     sleep 2
 
     #
-    # set_xattr -> update only ctime
-    #
-    set_xattr key value $TEST_TEXT_FILE
-    atime=`get_atime $TEST_TEXT_FILE`
-    ctime=`get_ctime $TEST_TEXT_FILE`
-    mtime=`get_mtime $TEST_TEXT_FILE`
-    if [ $base_atime -ne $atime -o $base_ctime -eq $ctime -o $base_mtime -ne $mtime ]; then
-       echo "set_xattr expected updated ctime: $base_ctime != $ctime and same mtime: $base_mtime == $mtime, atime: $base_atime == $atime"
-       return 1
-    fi
-    base_ctime=$ctime
-    sleep 2
-
-    #
     # touch -> update ctime/atime/mtime
     #
     touch $TEST_TEXT_FILE
@@ -929,20 +897,6 @@ function test_update_directory_time() {
     mtime=`get_mtime $TEST_DIR`
     if [ $base_atime -ne $atime -o $base_ctime -eq $ctime -o $base_mtime -ne $mtime ]; then
        echo "chown expected updated ctime: $base_ctime != $ctime and same mtime: $base_mtime == $mtime, atime: $base_atime == $atime"
-       return 1
-    fi
-    base_ctime=$ctime
-    sleep 2
-
-    #
-    # set_xattr -> update only ctime
-    #
-    set_xattr key value $TEST_DIR
-    atime=`get_atime $TEST_DIR`
-    ctime=`get_ctime $TEST_DIR`
-    mtime=`get_mtime $TEST_DIR`
-    if [ $base_atime -ne $atime -o $base_ctime -eq $ctime -o $base_mtime -ne $mtime ]; then
-       echo "set_xattr expected updated ctime: $base_ctime != $ctime and same mtime: $base_mtime == $mtime, atime: $base_atime == $atime"
        return 1
     fi
     base_ctime=$ctime
@@ -1109,13 +1063,13 @@ function test_open_second_fd {
 
 function test_write_multiple_offsets {
     describe "test writing to multiple offsets ..."
-    ../../write_multiple_offsets.py ${TEST_TEXT_FILE} 1024 1 $((16 * 1024 * 1024)) 1 $((18 * 1024 * 1024)) 1
+    $HOME/work/s3fs-fuse/test/write_multiple_offsets.py ${TEST_TEXT_FILE} 1024 1 $((16 * 1024 * 1024)) 1 $((18 * 1024 * 1024)) 1
     rm_test_file ${TEST_TEXT_FILE}
 }
 
 function test_write_multiple_offsets_backwards {
     describe "test writing to multiple offsets ..."
-    ../../write_multiple_offsets.py ${TEST_TEXT_FILE} $((20 * 1024 * 1024 + 1)) 1 $((10 * 1024 * 1024)) 1
+    $HOME/work/s3fs-fuse/test/write_multiple_offsets.py ${TEST_TEXT_FILE} $((20 * 1024 * 1024 + 1)) 1 $((10 * 1024 * 1024)) 1
     rm_test_file ${TEST_TEXT_FILE}
 }
 
@@ -1429,13 +1383,10 @@ function test_ensurespace_move_file() {
 function test_ut_ossfs {
     describe "Testing ossfs python ut..."
     export TEST_BUCKET_MOUNT_POINT=$TEST_BUCKET_MOUNT_POINT_1
-    ../../ut_test.py
+    $HOME/work/s3fs-fuse/test/ut_test.py
 }
 
 function add_all_tests {
-    if ps u $S3FS_PID | grep -q use_cache; then
-        add_tests test_cache_file_stat
-    fi
     if ! ps u $S3FS_PID | grep -q ensure_diskfree && ! uname | grep -q Darwin; then
         add_tests test_clean_up_cache
     fi
@@ -1449,18 +1400,8 @@ function add_all_tests {
     add_tests test_mv_nonempty_directory
     add_tests test_redirects
     add_tests test_mkdir_rmdir
-    add_tests test_chmod
-    add_tests test_chown
     add_tests test_list
     add_tests test_remove_nonempty_directory
-    if ! ps u $S3FS_PID | grep -q notsup_compat_dir; then
-        # TODO: investigate why notsup_compat_dir fails
-        add_tests test_external_directory_creation
-    fi
-    add_tests test_external_modification
-    add_tests test_read_external_object
-    add_tests test_update_metadata_external_small_object
-    add_tests test_update_metadata_external_large_object
     add_tests test_rename_before_close
     add_tests test_multipart_upload
     add_tests test_multipart_copy
@@ -1468,7 +1409,6 @@ function add_all_tests {
     add_tests test_special_characters
     add_tests test_hardlink
     add_tests test_symlink
-    add_tests test_extended_attributes
     add_tests test_mtime_file
     add_tests test_update_time
     add_tests test_update_directory_time
@@ -1482,7 +1422,6 @@ function add_all_tests {
     add_tests test_open_second_fd
     add_tests test_write_multiple_offsets
     add_tests test_write_multiple_offsets_backwards
-    add_tests test_content_type
     add_tests test_truncate_cache
     add_tests test_upload_sparsefile
     add_tests test_mix_upload_entities
