@@ -22,6 +22,7 @@
 #define S3FS_FDCACHE_ENTITY_H_
 
 #include <fcntl.h>
+#include <mutex>
 
 #include "autolock.h"
 #include "fdcache_page.h"
@@ -60,8 +61,8 @@ class FdEntity
         headers_t       orgmeta;        // original headers at opening
         off_t           size_orgmeta;   // original file size in original headers
 
-        mutable pthread_mutex_t fdent_data_lock;// protects the following members
-        PageList        pagelist;
+        mutable std::mutex fdent_data_lock;// protects the following members
+        PageList        pagelist GUARDED_BY(fdent_data_lock);
         std::string     cachepath;      // local cache file path
                                         // (if this is empty, does not load/save pagelist.)
         std::string     mirrorpath;     // mirror file path to local cache file path
@@ -136,6 +137,7 @@ class FdEntity
         bool SetGId(gid_t gid);
         bool SetContentType(const char* path);
 
+        // TODO: private?
         int Load(off_t start, off_t size, AutoLock::Type type, bool is_modified_flag = false);  // size=0 means loading to end
 
         off_t BytesModified();

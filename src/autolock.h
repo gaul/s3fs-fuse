@@ -23,6 +23,21 @@
 
 #include <pthread.h>
 
+#if defined(__clang__)
+#define THREAD_ANNOTATION_ATTRIBUTE__(x)   __attribute__((x))
+#else
+#define THREAD_ANNOTATION_ATTRIBUTE__(x)   // no-op
+#endif
+
+#define GUARDED_BY(x) \
+  THREAD_ANNOTATION_ATTRIBUTE__(guarded_by(x))
+
+#define PT_GUARDED_BY(x) \
+  THREAD_ANNOTATION_ATTRIBUTE__(pt_guarded_by(x))
+
+#define REQUIRES(...) \
+  THREAD_ANNOTATION_ATTRIBUTE__(requires_capability(__VA_ARGS__))
+
 //-------------------------------------------------------------------
 // AutoLock Class
 //-------------------------------------------------------------------

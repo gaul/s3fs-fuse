@@ -123,10 +123,6 @@ FdEntity::FdEntity(const char* tpath, const char* cpath) :
         S3FS_PRN_CRIT("failed to init fdent_lock: %d", result);
         abort();
     }
-    if(0 != (result = pthread_mutex_init(&fdent_data_lock, &attr))){
-        S3FS_PRN_CRIT("failed to init fdent_data_lock: %d", result);
-        abort();
-    }
     is_lock_init = true;
 }
 
@@ -136,10 +132,6 @@ FdEntity::~FdEntity()
 
     if(is_lock_init){
       int result;
-      if(0 != (result = pthread_mutex_destroy(&fdent_data_lock))){
-          S3FS_PRN_CRIT("failed to destroy fdent_data_lock: %d", result);
-          abort();
-      }
       if(0 != (result = pthread_mutex_destroy(&fdent_lock))){
           S3FS_PRN_CRIT("failed to destroy fdent_lock: %d", result);
           abort();
@@ -151,7 +143,7 @@ FdEntity::~FdEntity()
 void FdEntity::Clear()
 {
     AutoLock auto_lock(&fdent_lock);
-    AutoLock auto_data_lock(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock(fdent_data_lock);
 
     pseudo_fd_map.clear();
 
@@ -225,7 +217,7 @@ void FdEntity::Close(int fd)
 
     // check pseudo fd count
     if(-1 != physical_fd && 0 == GetOpenCount(AutoLock::ALREADY_LOCKED)){
-        AutoLock auto_data_lock(&fdent_data_lock);
+        const std::lock_guard<std::mutex> auto_data_lock(fdent_data_lock);
         if(!cachepath.empty()){
             // [NOTE]
             // Compare the inode of the existing cache file with the inode of
@@ -429,7 +421,7 @@ int FdEntity::Open(const headers_t* pmeta, off_t size, const struct timespec& ts
         return -EIO;
     }
 
-    AutoLock auto_data_lock(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock(fdent_data_lock);
 
     // [NOTE]
     // When the file size is incremental by truncating, it must be keeped
@@ -703,7 +695,7 @@ bool FdEntity::LoadAll(int fd, headers_t* pmeta, off_t* size, bool force_load)
         return false;
     }
 
-    AutoLock auto_data_lock(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock(fdent_data_lock);
 
     if(force_load){
         SetAllStatusUnloaded();
@@ -774,7 +766,7 @@ bool FdEntity::RenamePath(const std::string& newpath, std::string& fentmapkey)
 
 bool FdEntity::IsModified() const
 {
-    AutoLock auto_data_lock(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock(fdent_data_lock);
     return pagelist.IsModified();
 }
 
@@ -984,7 +976,7 @@ bool FdEntity::GetSize(off_t& size) const
         return false;
     }
 
-    AutoLock auto_data_lock(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock(fdent_data_lock);
     size = pagelist.Size();
     return true;
 }
@@ -1065,7 +1057,7 @@ bool FdEntity::SetAllStatus(bool is_loaded)
     return true;
 }
 
-int FdEntity::Load(off_t start, off_t size, AutoLock::Type type, bool is_modified_flag)
+int FdEntity::Load(off_t start, off_t size, AutoLock::Type type, bool is_modified_flag) REQUIRES(fdent_data_lock)
 {
     AutoLock auto_lock(&fdent_lock, type);
 
@@ -1074,7 +1066,6 @@ int FdEntity::Load(off_t start, off_t size, AutoLock::Type type, bool is_modifie
     if(-1 == physical_fd){
         return -EBADF;
     }
-    AutoLock auto_data_lock(&fdent_data_lock, type);
 
     int result = 0;
 
@@ -1382,7 +1373,7 @@ int FdEntity::NoCacheCompleteMultipartPost(PseudoFdInfo* pseudo_obj)
 
 off_t FdEntity::BytesModified()
 {
-    AutoLock auto_lock(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock(fdent_data_lock);
     return pagelist.BytesModified();
 }
 
@@ -1421,7 +1412,7 @@ int FdEntity::RowFlush(int fd, const char* tpath, AutoLock::Type type, bool forc
     }
     PseudoFdInfo* pseudo_obj = miter->second.get();
 
-    AutoLock auto_lock2(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock2(fdent_data_lock);
 
     if(!force_sync && !pagelist.IsModified()){
         // nothing to update.
@@ -1974,7 +1965,7 @@ ssize_t FdEntity::Read(int fd, char* bytes, off_t start, size_t size, bool force
     }
 
     AutoLock auto_lock(&fdent_lock);
-    AutoLock auto_lock2(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock2(fdent_data_lock);
 
     if(force_load){
         pagelist.SetPageLoadedStatus(start, size, PageList::PAGE_NOT_LOAD_MODIFIED);
@@ -2042,7 +2033,7 @@ ssize_t FdEntity::Write(int fd, const char* bytes, off_t start, size_t size)
         FdManager::get()->CleanupCacheDir();
     }
     AutoLock auto_lock(&fdent_lock);
-    AutoLock auto_lock2(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock2(fdent_data_lock);
 
     // check file size
     if(pagelist.Size() < start){
@@ -2483,7 +2474,7 @@ bool FdEntity::PunchHole(off_t start, size_t size)
 {
     S3FS_PRN_DBG("[path=%s][physical_fd=%d][offset=%lld][size=%zu]", path.c_str(), physical_fd, static_cast<long long int>(start), size);
 
-    AutoLock auto_lock(&fdent_data_lock);
+    const std::lock_guard<std::mutex> auto_data_lock(fdent_data_lock);
 
     if(-1 == physical_fd){
         return false;
@@ -2527,6 +2518,7 @@ void FdEntity::MarkDirtyNewFile()
 {
     AutoLock auto_lock(&fdent_lock);
 
+    // TODO: should be holding fdent_data_lock?
     pagelist.Init(0, false, true);
     pending_status = CREATE_FILE_PENDING;
 }
