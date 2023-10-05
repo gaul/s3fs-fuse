@@ -182,11 +182,7 @@ class StatCache
         void ChangeNoTruncateFlag(const std::string& key, bool no_truncate);
 
         // Delete stat cache
-        bool DelStat(const char* key, AutoLock::Type locktype = AutoLock::NONE);
-        bool DelStat(const std::string& key, AutoLock::Type locktype = AutoLock::NONE)
-        {
-            return DelStat(key.c_str(), locktype);
-        }
+        bool DelStat(const std::string& key, AutoLock::Type locktype = AutoLock::NONE);
 
         // Cache for symbolic link
         bool GetSymlink(const std::string& key, std::string& value);

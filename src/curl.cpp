@@ -410,7 +410,7 @@ bool S3fsCurl::InitMimeType(const std::string& strFile)
     }
     S3FS_PRN_DBG("Try to load mime types from %s file.", MimeFile.c_str());
 
-    std::ifstream MT(MimeFile.c_str());
+    std::ifstream MT(MimeFile.c_str());  // TODO: this should trigger but does not
     if(MT.good()){
         S3FS_PRN_DBG("The old mime types are cleared to load new mime types.");
         S3fsCurl::mimeTypes.clear();

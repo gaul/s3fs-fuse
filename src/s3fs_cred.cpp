@@ -599,7 +599,7 @@ bool S3fsCred::IsReadableS3fsPasswdFile() const
         return false;
     }
 
-    std::ifstream PF(passwd_file.c_str());
+    std::ifstream PF(passwd_file);
     if(!PF.good()){
         return false;
     }
@@ -688,7 +688,7 @@ bool S3fsCred::ParseS3fsPasswdFile(bucketkvmap_t& resmap)
     readline_t::iterator iter;
 
     // open passwd file
-    std::ifstream PF(passwd_file.c_str());
+    std::ifstream PF(passwd_file);
     if(!PF.good()){
         S3FS_PRN_EXIT("could not open passwd file : %s", passwd_file.c_str());
         return false;
@@ -884,7 +884,7 @@ int S3fsCred::CheckS3fsCredentialAwsFormat(const kvmap_t& kvmap, std::string& ac
 bool S3fsCred::ReadAwsCredentialFile(const std::string &filename, AutoLock::Type type)
 {
     // open passwd file
-    std::ifstream PF(filename.c_str());
+    std::ifstream PF(filename);
     if(!PF.good()){
         return false;
     }

@@ -74,3 +74,7 @@ Checks: '
     -readability-redundant-declaration,
     -readability-simplify-boolean-expr,
     -readability-suspicious-call-argument'
+CheckOptions:
+  # TODO: ifstream doesn't work?
+  [ { key: readability-redundant-string-cstr.StringParameterFunctions,
+      value: 'std::ifstream::ifstream;is_special_name_folder_object;StatCache::DelStat' } ]

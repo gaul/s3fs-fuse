@@ -113,7 +113,7 @@ int put_headers(const char* path, headers_t& meta, bool is_copy, bool use_st_siz
 //-------------------------------------------------------------------
 // Static functions : prototype
 //-------------------------------------------------------------------
-static bool is_special_name_folder_object(const char* path);
+static bool is_special_name_folder_object(const std::string& path);
 static int chk_dir_object_type(const char* path, std::string& newpath, std::string& nowpath, std::string& nowcache, headers_t* pmeta = nullptr, dirtype* pDirType = nullptr);
 static int remove_old_type_dir(const std::string& path, dirtype type);
 static int get_object_attribute(const char* path, struct stat* pstbuf, headers_t* pmeta = nullptr, bool overcheck = true, bool* pisforce = nullptr, bool add_no_truncate_cache = false);
@@ -340,7 +340,7 @@ static bool IS_CREATE_MP_STAT(const char* path)
     return (path && 0 == strcmp(path, "/") && !pHasMpStat->Get());
 }
 
-static bool is_special_name_folder_object(const char* path)
+static bool is_special_name_folder_object(const std::string& path)
 {
     if(!support_compat_dir){
         // s3fs does not support compatibility directory type("_$folder$" etc) now,
@@ -348,10 +348,10 @@ static bool is_special_name_folder_object(const char* path)
         return false;
     }
 
-    if(!path || '\0' == path[0]){
+    if(path.empty()){
         return false;
     }
-    if(0 == strcmp(path, "/") && mount_prefix.empty()){
+    if(path == "/" && mount_prefix.empty()){
         // the path is the mount point which is the bucket root
         return false;
     }
@@ -407,7 +407,7 @@ static int chk_dir_object_type(const char* path, std::string& newpath, std::stri
     if(0 == (result = get_object_attribute(newpath.c_str(), nullptr, pmeta, false, &isforce))){
         // Found "dir/" cache --> Check for "_$folder$", "no dir object"
         nowcache = newpath;
-        if(is_special_name_folder_object(newpath.c_str())){     // check support_compat_dir in this function
+        if(is_special_name_folder_object(newpath)){     // check support_compat_dir in this function
             // "_$folder$" type.
             (*pType) = dirtype::FOLDER;
             nowpath.erase(newpath.length() - 1);
@@ -445,7 +445,7 @@ static int chk_dir_object_type(const char* path, std::string& newpath, std::stri
             // (come here is that support_compat_dir is enabled)
             nowcache = "";  // This case is no cache.
             nowpath += "_$folder$";
-            if(is_special_name_folder_object(nowpath.c_str())){
+            if(is_special_name_folder_object(nowpath)){
                 // "_$folder$" type.
                 (*pType) = dirtype::FOLDER;
                 result   = 0;             // result is OK.
@@ -1361,7 +1361,7 @@ static int s3fs_rmdir(const char* _path)
     S3fsCurl s3fscurl;
     result = s3fscurl.DeleteRequest(strpath.c_str());
     s3fscurl.DestroyCurlHandle();
-    StatCache::getStatCacheData()->DelStat(strpath.c_str());
+    StatCache::getStatCacheData()->DelStat(strpath);
 
     // double check for old version(before 1.63)
     // The old version makes "dir" object, newer version makes "dir/".
@@ -1376,7 +1376,7 @@ static int s3fs_rmdir(const char* _path)
             // Found "dir" object.
             result = s3fscurl.DeleteRequest(strpath.c_str());
             s3fscurl.DestroyCurlHandle();
-            StatCache::getStatCacheData()->DelStat(strpath.c_str());
+            StatCache::getStatCacheData()->DelStat(strpath);
         }
     }
     // If there is no "dir" and "dir/" object(this case is made by s3cmd/s3sync),
@@ -1384,7 +1384,7 @@ static int s3fs_rmdir(const char* _path)
 
     // check for "_$folder$" object.
     // This processing is necessary for other S3 clients compatibility.
-    if(is_special_name_folder_object(strpath.c_str())){
+    if(is_special_name_folder_object(strpath)){
         strpath += "_$folder$";
         result   = s3fscurl.DeleteRequest(strpath.c_str());
     }

@@ -342,7 +342,7 @@ bool StatCache::AddStat(const std::string& key, const headers_t& meta, bool forc
 
     if(stat_cache.end() != stat_cache.find(key)){
         // found cache
-        DelStat(key.c_str(), AutoLock::ALREADY_LOCKED);
+        DelStat(key, AutoLock::ALREADY_LOCKED);
     }else{
         // check: need to truncate cache
         if(stat_cache.size() > CacheSize){
@@ -462,7 +462,7 @@ bool StatCache::AddNoObjectCache(const std::string& key)
 
     if(stat_cache.end() != stat_cache.find(key)){
 		// found
-        DelStat(key.c_str(), AutoLock::ALREADY_LOCKED);
+        DelStat(key, AutoLock::ALREADY_LOCKED);
     }else{
         // check: need to truncate cache
         if(stat_cache.size() > CacheSize){
@@ -577,12 +577,9 @@ bool StatCache::TruncateCache(AutoLock::Type locktype)
     return true;
 }
 
-bool StatCache::DelStat(const char* key, AutoLock::Type locktype)
+bool StatCache::DelStat(const std::string& key, AutoLock::Type locktype)
 {
-    if(!key){
-        return false;
-    }
-    S3FS_PRN_INFO3("delete stat cache entry[path=%s]", key);
+    S3FS_PRN_INFO3("delete stat cache entry[path=%s]", key.c_str());
 
     AutoLock lock(&StatCache::stat_cache_lock, locktype);
 
@@ -591,7 +588,7 @@ bool StatCache::DelStat(const char* key, AutoLock::Type locktype)
         stat_cache.erase(iter);
         DelNotruncateCache(key);
     }
-    if(0 < strlen(key) && 0 != strcmp(key, "/")){
+    if(!key.empty() && key != "/"){
         std::string strpath = key;
         if('/' == *strpath.rbegin()){
             // If there is "path" cache, delete it.
