@@ -3528,11 +3528,11 @@ static int list_bucket(const char* path, S3ObjList& head, const char* delimiter,
             return -EIO;
         }
         if(true == (truncated = is_truncated(doc.get()))){
-            auto tmpch = get_next_continuation_token(doc.get());
-            if(nullptr != tmpch){
-                next_continuation_token = reinterpret_cast<const char*>(tmpch.get());
-            }else if(nullptr != (tmpch = get_next_marker(doc.get()))){
-                next_marker = reinterpret_cast<const char*>(tmpch.get());
+            std::string value;
+            if(simple_parse_xml(doc.get(), "/ListBucketResult/NextContinuationToken", value)){
+                next_continuation_token = value;
+            }else if(simple_parse_xml(doc.get(), "/ListBucketResult/NextContinuationToken", value)){
+                next_marker = value;
             }
 
             if(next_continuation_token.empty() && next_marker.empty()){
@@ -4367,6 +4367,7 @@ static bool check_region_error(const char* pbody, size_t len, std::string& expec
     }
 
     std::string code;
+    // TODO: what about these?
     if(!simple_parse_xml(pbody, len, "Code", code) || code != "AuthorizationHeaderMalformed"){
         return false;
     }

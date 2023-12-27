@@ -85,54 +85,6 @@ static bool GetXmlNsUrl(xmlDocPtr doc, std::string& nsurl)
     return result;
 }
 
-static unique_ptr_xmlChar get_base_exp(xmlDocPtr doc, const char* exp)
-{
-    std::string xmlnsurl;
-    std::string exp_string;
-
-    if(!doc){
-        return {nullptr, xmlFree};
-    }
-    unique_ptr_xmlXPathContext ctx(xmlXPathNewContext(doc), xmlXPathFreeContext);
-
-    if(!noxmlns && GetXmlNsUrl(doc, xmlnsurl)){
-        xmlXPathRegisterNs(ctx.get(), reinterpret_cast<const xmlChar*>("s3"), reinterpret_cast<const xmlChar*>(xmlnsurl.c_str()));
-        exp_string = "/s3:ListBucketResult/s3:";
-    } else {
-        exp_string = "/ListBucketResult/";
-    }
-
-    exp_string += exp;
-
-    unique_ptr_xmlXPathObject marker_xp(xmlXPathEvalExpression(reinterpret_cast<const xmlChar*>(exp_string.c_str()), ctx.get()), xmlXPathFreeObject);
-    if(nullptr == marker_xp){
-        return {nullptr, xmlFree};
-    }
-    if(xmlXPathNodeSetIsEmpty(marker_xp->nodesetval)){
-        S3FS_PRN_INFO("marker_xp->nodesetval is empty.");
-        return {nullptr, xmlFree};
-    }
-    xmlNodeSetPtr nodes  = marker_xp->nodesetval;
-
-    unique_ptr_xmlChar result(xmlNodeListGetString(doc, nodes->nodeTab[0]->xmlChildrenNode, 1), xmlFree);
-    return result;
-}
-
-static unique_ptr_xmlChar get_prefix(xmlDocPtr doc)
-{
-    return get_base_exp(doc, "Prefix");
-}
-
-unique_ptr_xmlChar get_next_continuation_token(xmlDocPtr doc)
-{
-    return get_base_exp(doc, "NextContinuationToken");
-}
-
-unique_ptr_xmlChar get_next_marker(xmlDocPtr doc)
-{
-    return get_base_exp(doc, "NextMarker");
-}
-
 // return: the pointer to object name on allocated memory.
 //         the pointer to "c_strErrorObjectName".(not allocated)
 //         nullptr(a case of something error occurred)
@@ -201,35 +153,6 @@ static char* get_object_name(xmlDocPtr doc, xmlNodePtr node, const char* path)
     return const_cast<char*>(c_strErrorObjectName);
 }
 
-static unique_ptr_xmlChar get_exp_value_xml(xmlDocPtr doc, xmlXPathContextPtr ctx, const char* exp_key)
-{
-    if(!doc || !ctx || !exp_key){
-        return {nullptr, xmlFree};
-    }
-
-    xmlNodeSetPtr     exp_nodes;
-
-    // search exp_key tag
-    unique_ptr_xmlXPathObject exp(xmlXPathEvalExpression(reinterpret_cast<const xmlChar*>(exp_key), ctx), xmlXPathFreeObject);
-    if(nullptr == exp){
-        S3FS_PRN_ERR("Could not find key(%s).", exp_key);
-        return {nullptr, xmlFree};
-    }
-    if(xmlXPathNodeSetIsEmpty(exp->nodesetval)){
-        S3FS_PRN_ERR("Key(%s) node is empty.", exp_key);
-        return {nullptr, xmlFree};
-    }
-    // get exp_key value & set in struct
-    exp_nodes = exp->nodesetval;
-    unique_ptr_xmlChar exp_value(xmlNodeListGetString(doc, exp_nodes->nodeTab[0]->xmlChildrenNode, 1), xmlFree);
-    if(nullptr == exp_value){
-        S3FS_PRN_ERR("Key(%s) value is empty.", exp_key);
-        return {nullptr, xmlFree};
-    }
-
-    return exp_value;
-}
-
 bool get_incomp_mpu_list(xmlDocPtr doc, incomp_mpu_list_t& list)
 {
     if(!doc){
@@ -240,21 +163,12 @@ bool get_incomp_mpu_list(xmlDocPtr doc, incomp_mpu_list_t& list)
 
     std::string xmlnsurl;
     std::string ex_upload = "//";
-    std::string ex_key;
-    std::string ex_id;
-    std::string ex_date;
 
     if(!noxmlns && GetXmlNsUrl(doc, xmlnsurl)){
         xmlXPathRegisterNs(ctx.get(), reinterpret_cast<const xmlChar*>("s3"), reinterpret_cast<const xmlChar*>(xmlnsurl.c_str()));
         ex_upload += "s3:";
-        ex_key    += "s3:";
-        ex_id     += "s3:";
-        ex_date   += "s3:";
     }
     ex_upload += "Upload";
-    ex_key    += "Key";
-    ex_id     += "UploadId";
-    ex_date   += "Initiated";
 
     // get "Upload" Tags
     unique_ptr_xmlXPathObject upload_xp(xmlXPathEvalExpression(reinterpret_cast<const xmlChar*>(ex_upload.c_str()), ctx.get()), xmlXPathFreeObject);
@@ -276,29 +190,25 @@ bool get_incomp_mpu_list(xmlDocPtr doc, incomp_mpu_list_t& list)
 
         INCOMP_MPU_INFO part;
 
-        // search "Key" tag
-        unique_ptr_xmlChar ex_value(get_exp_value_xml(doc, ctx.get(), ex_key.c_str()));
-        if(nullptr == ex_value){
+        std::string key;
+        if(!simple_parse_xml(doc, "/ListMultipartUploadsResult/Key", key)){
             continue;
         }
-        if('/' != *(reinterpret_cast<char*>(ex_value.get()))){
+
+        if("/" != key){
             part.key = "/";
         }else{
             part.key = "";
         }
-        part.key += reinterpret_cast<char*>(ex_value.get());
+        part.key += key;
 
-        // search "UploadId" tag
-        if(nullptr == (ex_value = get_exp_value_xml(doc, ctx.get(), ex_id.c_str()))){
+        if(!simple_parse_xml(doc, "/ListMultipartUploadsResult/UploadId", part.id)){
             continue;
         }
-        part.id = reinterpret_cast<char*>(ex_value.get());
 
-        // search "Initiated" tag
-        if(nullptr == (ex_value = get_exp_value_xml(doc, ctx.get(), ex_date.c_str()))){
+        if(!simple_parse_xml(doc, "/ListMultipartUploadsResult/Initiated", part.date)){
             continue;
         }
-        part.date = reinterpret_cast<char*>(ex_value.get());
 
         list.push_back(part);
     }
@@ -308,11 +218,11 @@ bool get_incomp_mpu_list(xmlDocPtr doc, incomp_mpu_list_t& list)
 
 bool is_truncated(xmlDocPtr doc)
 {
-    unique_ptr_xmlChar strTruncate(get_base_exp(doc, "IsTruncated"));
-    if(!strTruncate){
+    std::string strTruncate;
+    if(!simple_parse_xml(doc, "/ListBucketResult/IsTruncated", strTruncate)){
         return false;
     }
-    return 0 == strcasecmp(reinterpret_cast<const char*>(strTruncate.get()), "true");
+    return 0 == strcasecmp(strTruncate.c_str(), "true");
 }
 
 int append_objects_from_xml_ex(const char* path, xmlDocPtr doc, xmlXPathContextPtr ctx, const char* ex_contents, const char* ex_key, const char* ex_etag, int isCPrefix, S3ObjList& head, bool prefix)
@@ -408,8 +318,10 @@ int append_objects_from_xml(const char* path, xmlDocPtr doc, S3ObjList& head)
     }
 
     // If there is not <Prefix>, use path instead of it.
-    auto pprefix = get_prefix(doc);
-    std::string prefix  = (pprefix ? reinterpret_cast<char*>(pprefix.get()) : path ? path : "");
+    std::string prefix;
+    if(!simple_parse_xml(doc, "/ListBucketResult/Prefix", prefix)){
+        prefix = path ? path : "";
+    }
 
     unique_ptr_xmlXPathContext ctx(xmlXPathNewContext(doc), xmlXPathFreeContext);
 
@@ -440,46 +352,49 @@ int append_objects_from_xml(const char* path, xmlDocPtr doc, S3ObjList& head)
 //-------------------------------------------------------------------
 // Utility functions
 //-------------------------------------------------------------------
-bool simple_parse_xml(const char* data, size_t len, const char* key, std::string& value)
+bool simple_parse_xml(xmlDocPtr doc, const char* key, std::string& value)
 {
-    bool result = false;
-
-    if(!data || !key){
+    if(!doc || !key){
         return false;
     }
     value.clear();
 
+    unique_ptr_xmlXPathContext ctx(xmlXPathNewContext(doc), xmlXPathFreeContext);
+
+    std::string myKey = key;
+    std::string xmlnsurl;
+    if(!noxmlns && GetXmlNsUrl(doc, xmlnsurl)){
+        xmlXPathRegisterNs(ctx.get(), reinterpret_cast<const xmlChar*>("s3"), reinterpret_cast<const xmlChar*>(xmlnsurl.c_str()));
+        myKey = replace_all(std::move(myKey), "/", "/s3:");
+    }
+
+    unique_ptr_xmlXPathObject result(xmlXPathEvalExpression(reinterpret_cast<const xmlChar*>(myKey.c_str()), ctx.get()), xmlXPathFreeObject);
+    if(nullptr == result){
+        return false;
+    }
+    if(xmlXPathNodeSetIsEmpty(result->nodesetval)){
+        return false;
+    }
+
+    unique_ptr_xmlChar ex_value(xmlNodeListGetString(doc, result->nodesetval->nodeTab[0]->xmlChildrenNode, 1), xmlFree);
+    if(!ex_value){
+        return false;
+    }
+    value = reinterpret_cast<const char *>(ex_value.get());
+
+    return true;
+}
+
+bool simple_parse_xml(const char* data, size_t len, const char* key, std::string& value)
+{
+    if(!data){
+        return false;
+    }
     std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> doc(xmlReadMemory(data, static_cast<int>(len), "", nullptr, 0), xmlFreeDoc);
     if(nullptr == doc){
         return false;
     }
-
-    if(nullptr == doc->children){
-        return false;
-    }
-    for(xmlNodePtr cur_node = doc->children->children; nullptr != cur_node; cur_node = cur_node->next){
-        // For DEBUG
-        // std::string cur_node_name(reinterpret_cast<const char *>(cur_node->name));
-        // printf("cur_node_name: %s\n", cur_node_name.c_str());
-
-        if(XML_ELEMENT_NODE == cur_node->type){
-            std::string elementName = reinterpret_cast<const char*>(cur_node->name);
-            // For DEBUG
-            // printf("elementName: %s\n", elementName.c_str());
-
-            if(cur_node->children){
-                if(XML_TEXT_NODE == cur_node->children->type){
-                    if(elementName == key) {
-                        value = reinterpret_cast<const char *>(cur_node->children->content);
-                        result    = true;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    return result;
+    return simple_parse_xml(doc.get(), key, value);
 }
 
 //-------------------------------------------------------------------

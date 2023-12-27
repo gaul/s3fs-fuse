@@ -80,6 +80,7 @@ std::string trim_right(std::string s, const char *t = SPACES);
 std::string trim(std::string s, const char *t = SPACES);
 std::string lower(std::string s);
 std::string peeloff(const std::string& s);
+std::string replace_all(std::string str, const std::string& from, const std::string& to);
 
 //
 // Date string

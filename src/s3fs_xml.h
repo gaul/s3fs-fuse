@@ -41,10 +41,9 @@ typedef std::unique_ptr<xmlDoc, decltype(&xmlFreeDoc)> unique_ptr_xmlDoc;
 bool is_truncated(xmlDocPtr doc);
 int append_objects_from_xml_ex(const char* path, xmlDocPtr doc, xmlXPathContextPtr ctx, const char* ex_contents, const char* ex_key, const char* ex_etag, int isCPrefix, S3ObjList& head, bool prefix);
 int append_objects_from_xml(const char* path, xmlDocPtr doc, S3ObjList& head);
-unique_ptr_xmlChar get_next_continuation_token(xmlDocPtr doc);
-unique_ptr_xmlChar get_next_marker(xmlDocPtr doc);
 bool get_incomp_mpu_list(xmlDocPtr doc, incomp_mpu_list_t& list);
 
+bool simple_parse_xml(xmlDocPtr doc, const char* key, std::string& value);
 bool simple_parse_xml(const char* data, size_t len, const char* key, std::string& value);
 
 bool init_parser_xml_lock();

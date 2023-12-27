@@ -1321,7 +1321,7 @@ int S3fsCurl::MapPutErrorResponse(int result)
     //
     const char* pstrbody = bodydata.c_str();
     std::string code;
-    if(simple_parse_xml(pstrbody, bodydata.size(), "Code", code)){
+    if(simple_parse_xml(pstrbody, bodydata.size(), "/Error/Code", code)){
         S3FS_PRN_ERR("Put request get 200 status response, but it included error body(or nullptr). The request failed during copying the object in S3.  Code: %s", code.c_str());
         // TODO: parse more specific error from <Code>
         result = -EIO;
@@ -2500,7 +2500,7 @@ int S3fsCurl::RequestPerform(bool dontAddAuthHeaders /*=false*/)
                 {
                     // Try to parse more specific AWS error code otherwise fall back to HTTP error code.
                     std::string value;
-                    if(simple_parse_xml(bodydata.c_str(), bodydata.size(), "Code", value)){
+                    if(simple_parse_xml(bodydata.c_str(), bodydata.size(), "/Error/Code", value)){
                         // TODO: other error codes
                         if(value == "EntityTooLarge"){
                             result = -EFBIG;
@@ -3855,7 +3855,7 @@ int S3fsCurl::PreMultipartPostRequest(const char* tpath, headers_t& meta, std::s
         return result;
     }
 
-    if(!simple_parse_xml(bodydata.c_str(), bodydata.size(), "UploadId", upload_id)){
+    if(!simple_parse_xml(bodydata.c_str(), bodydata.size(), "/InitiateMultipartUploadResult/UploadId", upload_id)){
         bodydata.clear();
         return -EIO;
     }
@@ -4270,7 +4270,7 @@ bool S3fsCurl::CopyMultipartPostCallback(S3fsCurl* s3fscurl, void* param)
 bool S3fsCurl::CopyMultipartPostComplete()
 {
     std::string etag;
-    partdata.uploaded = simple_parse_xml(bodydata.c_str(), bodydata.size(), "ETag", etag);
+    partdata.uploaded = simple_parse_xml(bodydata.c_str(), bodydata.size(), "/CopyObjectResult/ETag", etag);
     partdata.petag->etag = peeloff(etag);
 
     bodydata.clear();
