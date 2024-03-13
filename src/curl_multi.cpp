@@ -58,19 +58,14 @@ S3fsMultiCurl::~S3fsMultiCurl()
 
 bool S3fsMultiCurl::ClearEx(bool is_all)
 {
-    s3fscurllist_t::iterator iter;
-    for(iter = clist_req.begin(); iter != clist_req.end(); ++iter){
-        S3fsCurl* s3fscurl = iter->get();
-        if(s3fscurl){
-            s3fscurl->DestroyCurlHandle();
-        }
+    for(auto& s3fscurl : clist_req){
+        s3fscurl.DestroyCurlHandle();
     }
     clist_req.clear();
 
     if(is_all){
-        for(iter = clist_all.begin(); iter != clist_all.end(); ++iter){
-            S3fsCurl* s3fscurl = iter->get();
-            s3fscurl->DestroyCurlHandle();
+        for(auto& s3fscurl : clist_all){
+            s3fscurl.DestroyCurlHandle();
         }
         clist_all.clear();
     }
@@ -115,11 +110,8 @@ void* S3fsMultiCurl::SetNotFoundCallbackParam(void* param)
     return old;
 }
 
-bool S3fsMultiCurl::SetS3fsCurlObject(std::unique_ptr<S3fsCurl> s3fscurl)
+bool S3fsMultiCurl::SetS3fsCurlObject(S3fsCurl&& s3fscurl)
 {
-    if(!s3fscurl){
-        return false;
-    }
     clist_all.push_back(std::move(s3fscurl));
 
     return true;
@@ -135,7 +127,7 @@ int S3fsMultiCurl::MultiPerform()
 
     for(s3fscurllist_t::iterator iter = clist_req.begin(); iter != clist_req.end(); ++iter) {
         pthread_t   thread;
-        S3fsCurl*   s3fscurl = iter->get();
+        S3fsCurl*   s3fscurl = &*iter;
         if(!s3fscurl){
             continue;
         }
@@ -204,8 +196,7 @@ int S3fsMultiCurl::MultiRead()
     int result = 0;
 
     for(s3fscurllist_t::iterator iter = clist_req.begin(); iter != clist_req.end(); ){
-        std::unique_ptr<S3fsCurl> s3fscurl(std::move(*iter));
-
+        S3fsCurl* s3fscurl = &*iter;
         bool isRetry = false;
         bool isPostpone = false;
         bool isNeedResetOffset = true;
@@ -220,7 +211,7 @@ int S3fsMultiCurl::MultiRead()
                 // add into stat cache
                 // cppcheck-suppress unmatchedSuppression
                 // cppcheck-suppress knownPointerToBool
-                if(SuccessCallback && !SuccessCallback(s3fscurl.get(), pSuccessCallbackParam)){
+                if(SuccessCallback && !SuccessCallback(s3fscurl, pSuccessCallbackParam)){
                     S3FS_PRN_WARN("error from success callback function(%s).", s3fscurl->url.c_str());
                 }
             }else if(400 == responseCode){
@@ -236,7 +227,7 @@ int S3fsMultiCurl::MultiRead()
 				// Call callback function
                 // cppcheck-suppress unmatchedSuppression
                 // cppcheck-suppress knownPointerToBool
-                if(NotFoundCallback && !NotFoundCallback(s3fscurl.get(), pNotFoundCallbackParam)){
+                if(NotFoundCallback && !NotFoundCallback(s3fscurl, pNotFoundCallbackParam)){
                     S3FS_PRN_WARN("error from not found callback function(%s).", s3fscurl->url.c_str());
                 }
             }else if(500 == responseCode){
@@ -272,8 +263,8 @@ int S3fsMultiCurl::MultiRead()
         }
 
         if(isPostpone){
+            clist_req.push_back(std::move(*s3fscurl));    // Re-evaluate at the end
             clist_req.erase(iter);
-            clist_req.push_back(std::move(s3fscurl));    // Re-evaluate at the end
             iter = clist_req.begin();
         }else{
             if(!isRetry || (!not_abort && 0 != result)){
@@ -283,23 +274,24 @@ int S3fsMultiCurl::MultiRead()
             }else{
                 // Reset offset
                 if(isNeedResetOffset){
-                    S3fsCurl::ResetOffset(s3fscurl.get());
+                    S3fsCurl::ResetOffset(s3fscurl);
                 }
 
                 // For retry
                 std::unique_ptr<S3fsCurl> retrycurl;
+                // TODO: suspicious
                 const S3fsCurl* retrycurl_ptr = retrycurl.get();  // save this due to std::move below
                 if(RetryCallback){
-                    retrycurl = RetryCallback(s3fscurl.get());
+                    retrycurl = RetryCallback(s3fscurl);
                     if(nullptr != retrycurl){
-                        clist_all.push_back(std::move(retrycurl));
+                        clist_all.push_back(std::move(*retrycurl));
                     }else{
                         // set EIO and wait for other parts.
                         result = -EIO;
                     }
                 }
                 // cppcheck-suppress mismatchingContainers
-                if(s3fscurl.get() != retrycurl_ptr){
+                if(s3fscurl != retrycurl_ptr){
                     s3fscurl->DestroyCurlHandle();
                 }
             }
@@ -310,9 +302,8 @@ int S3fsMultiCurl::MultiRead()
 
     if(!not_abort && 0 != result){
         // If an EIO error has already occurred, clear all retry objects.
-        for(s3fscurllist_t::iterator iter = clist_all.begin(); iter != clist_all.end(); ++iter){
-            S3fsCurl* s3fscurl = iter->get();
-            s3fscurl->DestroyCurlHandle();
+        for(auto& s3fscurl : clist_all){
+            s3fscurl.DestroyCurlHandle();
         }
         clist_all.clear();
     }
@@ -331,9 +322,8 @@ int S3fsMultiCurl::Request()
     while(!clist_all.empty()){
         // set curl handle to multi handle
         int                      result;
-        s3fscurllist_t::iterator iter;
-        for(iter = clist_all.begin(); iter != clist_all.end(); ++iter){
-            clist_req.push_back(std::move(*iter));
+        for(auto& iter : clist_all){
+            clist_req.push_back(std::move(iter));
         }
         clist_all.clear();
 
