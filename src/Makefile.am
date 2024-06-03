@@ -100,8 +100,14 @@ TESTS = \
     test_page_list \
     test_string_util
 
-clang-tidy:
-	clang-tidy -extra-arg-before=-xc++ \
+# TODO: hacky way to generate the compilation database
+compile_commands.json:
+	make clean
+	bear -- make -j $$(nproc)
+
+# TODO: does not seem to check headers
+clang-tidy: compile_commands.json
+	run-clang-tidy -j $$(nproc) -p . -config-file ../.clang-tidy -extra-arg-before=-xc++ \
 		*.h $(s3fs_SOURCES) test_curl_util.cpp test_page_list.cpp test_string_util.cpp \
 		-- $(DEPS_CFLAGS) $(CPPFLAGS)
 
