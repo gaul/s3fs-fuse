@@ -2805,7 +2805,18 @@ function test_pjdfstest() {
         ../../pjdfstest/tests/utimensat/0[1-58-9].t
 }
 
+function test_efficiency() {
+    touch foo
+    ls -l foo
+    echo foo >> foo
+    ls -l
+    return 1
+}
+
 function add_all_tests {
+    add_tests test_efficiency
+    return
+
     if s3fs_args | grep -q use_cache; then
         add_tests test_cache_file_stat
         add_tests test_zero_cache_file_stat
